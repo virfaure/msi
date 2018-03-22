@@ -11,6 +11,7 @@ use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\MultiDimensionalIndexer\Alias;
 use Magento\Framework\MultiDimensionalIndexer\IndexNameBuilder;
 use Magento\Framework\MultiDimensionalIndexer\IndexNameResolver;
+use Magento\InventoryCatalog\Api\DefaultStockProviderInterface;
 use Magento\InventoryIndexer\Indexer\InventoryIndexer;
 
 /**
@@ -18,6 +19,8 @@ use Magento\InventoryIndexer\Indexer\InventoryIndexer;
  */
 class StockIndexTableNameResolver implements StockIndexTableNameResolverInterface
 {
+    const LEGACY_VIEW_NAME = 'inventory_stock_status';
+
     /**
      * @var IndexNameBuilder
      */
@@ -39,21 +42,29 @@ class StockIndexTableNameResolver implements StockIndexTableNameResolverInterfac
     private $dimensionName;
 
     /**
+     * @var DefaultStockProviderInterface
+     */
+    private $defaultStockProvider;
+
+    /**
      * @param IndexNameBuilder $indexNameBuilder
      * @param IndexNameResolver $indexNameResolver
      * @param ResourceConnection $resourceConnection
+     * @param DefaultStockProviderInterface $defaultStockProvider
      * @param string $dimensionName
      */
     public function __construct(
         IndexNameBuilder $indexNameBuilder,
         IndexNameResolver $indexNameResolver,
         ResourceConnection $resourceConnection,
+        DefaultStockProviderInterface $defaultStockProvider,
         string $dimensionName
     ) {
         $this->indexNameBuilder = $indexNameBuilder;
         $this->indexNameResolver = $indexNameResolver;
         $this->resourceConnection = $resourceConnection;
         $this->dimensionName = $dimensionName;
+        $this->defaultStockProvider = $defaultStockProvider;
     }
 
     /**
@@ -61,13 +72,17 @@ class StockIndexTableNameResolver implements StockIndexTableNameResolverInterfac
      */
     public function execute(int $stockId): string
     {
-        $indexName = $this->indexNameBuilder
-            ->setIndexId(InventoryIndexer::INDEXER_ID)
-            ->addDimension($this->dimensionName, (string)$stockId)
-            ->setAlias(Alias::ALIAS_MAIN)
-            ->build();
+        if ($this->defaultStockProvider->getId() === $stockId) {
+            $tableName = self::LEGACY_VIEW_NAME;
+        } else {
+            $indexName = $this->indexNameBuilder
+                ->setIndexId(InventoryIndexer::INDEXER_ID)
+                ->addDimension($this->dimensionName, (string)$stockId)
+                ->setAlias(Alias::ALIAS_MAIN)
+                ->build();
 
-        $tableName = $this->indexNameResolver->resolveName($indexName);
+            $tableName = $this->indexNameResolver->resolveName($indexName);
+        }
 
         return $this->resourceConnection->getTableName($tableName);
     }
