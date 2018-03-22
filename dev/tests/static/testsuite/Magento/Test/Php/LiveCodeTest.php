@@ -68,19 +68,28 @@ class LiveCodeTest extends \PHPUnit\Framework\TestCase
      * @param array $fileTypes
      * @param string $changedFilesBaseDir
      * @param string $baseFilesFolder
+     * @param string $whitelistFile
      * @return array
      */
-    public static function getWhitelist($fileTypes = ['php'], $changedFilesBaseDir = '', $baseFilesFolder = '')
-    {
+    public static function getWhitelist(
+        $fileTypes = ['php'],
+        $changedFilesBaseDir = '',
+        $baseFilesFolder = '',
+        $whitelistFile = '/_files/whitelist/common.txt'
+    ) {
         $changedFiles = self::getChangedFilesList($changedFilesBaseDir);
         if (empty($changedFiles)) {
             return [];
         }
 
         $globPatternsFolder = ('' !== $baseFilesFolder) ? $baseFilesFolder : self::getBaseFilesFolder();
-        $directoriesToCheck = Files::init()->readLists($globPatternsFolder . '/_files/whitelist/common.txt');
+        try {
+            $directoriesToCheck = Files::init()->readLists($globPatternsFolder . $whitelistFile);
+        } catch (\Exception $e) {
+            // no directories matched white list
+            return [];
+        }
         $targetFiles = self::filterFiles($changedFiles, $fileTypes, $directoriesToCheck);
-
         return $targetFiles;
     }
 
@@ -194,7 +203,12 @@ class LiveCodeTest extends \PHPUnit\Framework\TestCase
      */
     private function getFullWhitelist()
     {
-        return Files::init()->readLists(__DIR__ . '/_files/whitelist/common.txt');
+        try {
+            return Files::init()->readLists(__DIR__ . '/_files/whitelist/common.txt');
+        } catch (\Exception $e) {
+            // nothing is whitelisted
+            return [];
+        }
     }
 
     public function testCodeStyle()
@@ -265,6 +279,43 @@ class LiveCodeTest extends \PHPUnit\Framework\TestCase
         $this->assertTrue(
             $result,
             "PHP Copy/Paste Detector has found error(s):" . PHP_EOL . $output
+        );
+    }
+
+    /**
+     * Tests whitelisted files for strict type declarations.
+     */
+    public function testStrictTypes()
+    {
+        $whiteList = self::getWhitelist(
+            ['php'],
+            '',
+            '',
+            '/_files/whitelist/strict_type.txt'
+        );
+        try {
+            $blackList = Files::init()->readLists(
+                self::getBaseFilesFolder() . '/_files/blacklist/strict_type.txt'
+            );
+        } catch (\Exception $e) {
+            // nothing matched black list
+            $blackList = [];
+        }
+        $toBeTestedFiles = array_diff($whiteList, $blackList);
+
+        $filesMissingStrictTyping = [];
+        foreach ($toBeTestedFiles as $fileName) {
+            $file = file_get_contents($fileName);
+            if (strstr($file, 'strict_types=1') === false) {
+                $filesMissingStrictTyping[] = $fileName;
+            }
+        }
+        $filesMissingStrictTypingString = implode(PHP_EOL, $filesMissingStrictTyping);
+
+        $this->assertEquals(
+            0,
+            count($filesMissingStrictTyping),
+            "Following files are missing strict type declaration:" . PHP_EOL . $filesMissingStrictTypingString
         );
     }
 }
